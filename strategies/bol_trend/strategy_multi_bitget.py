@@ -21,21 +21,20 @@ now = datetime.now()
 current_time = now.strftime("%d/%m/%Y %H:%M:%S")
 print("--- Start Execution Time :", current_time, "---")
 #
-# f = open(
-#     "../../secret.json",
-# )
 f = open(
-    "./live_tools/secret.json",
+    "../../secret.json",
 )
+# f = open(
+#     "./live_tools/secret.json",
+# )
 
-# Ajustez le chemin si nécessaire
 secret = json.load(f)
 f.close()
 
 account_to_select = "bitget_exemple"
 production = True
 timeframe = "1m"
-type = ["long"]  # Spécifiez "short" si vous voulez également prendre des positions courtes
+type = ["long"]
 leverage = 5
 max_var = 5
 max_side_exposition = 1.55
@@ -50,12 +49,12 @@ params_coin = {
         "bb_window": 50,
         "bb_std": 2,
         "long_ma_window": 98,
-        "ma_slope_tolerance": 0.05,  # Tolérance pour la pente de la MA 20
-        "bb_width_tolerance": 5.0,  # Tolérance pour la largeur des BB en %
-        "rsi_threshold": 50,  # Seuil RSI pour l'entrée en position
-        "rsi_exit_threshold": 70,  # Seuil RSI pour la sortie de position
-        "macd_exit": True,  # Activation de la sortie basée sur le MACD
-        "trailing_stop_percentage": 2.0  # Pourcentage pour le trailing stop-loss
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
     "LDO/USDT:USDT": {
         "wallet_exposure": 0.1,
@@ -322,7 +321,6 @@ params_coin = {
         "macd_exit": True,
         "trailing_stop_percentage": 2.0
     },
-    # Ajoutez d'autres actifs avec les mêmes paramètres
 }
 
 
@@ -334,12 +332,12 @@ def open_long(row, pair):
 
 
 
-    if (
-            row['n1_close'] < row['n1_higher_band']
-            and row['close'] > row['long_ma']
+    if (row['n1_close'] < row['n1_higher_band']
+            and row['volume'] > row['volume'].rolling(20).mean()
+            and row['close'] > row['long_ema_20']
             and row['close'] > row['higher_band']
             and row['close'] > row['long_ma']
-            and abs(row['ma_20_slope_pct']) < ma_slope_tolerance
+            and row['ma_20_slope_pct'] > -ma_slope_tolerance
             and row['bb_width_pct'] < bb_width_tolerance
             and row['rsi'] > rsi_threshold
     ):
@@ -363,15 +361,12 @@ def close_long(row, position, pair, df):
     macd_exit = params.get('macd_exit', True)
     trailing_stop_percentage = params.get('trailing_stop_percentage', 2.0)
 
-    # Mise à jour du plus haut atteint pour le trailing stop-loss en se basant sur l'historique
     open_time = position.get('open_time')
     df_since_open = df[df.index >= open_time]
     highest_price = df_since_open['high'].max()
     position['highest_price'] = highest_price
     trailing_stop_price = highest_price * (1 - trailing_stop_percentage / 100)
 
-
-    # Conditions de sortie
     condition1 = row['close'] < row['ma_band']
     condition2 = row['rsi'] > rsi_exit_threshold
     condition3 = macd_exit and (row['macd'] < row['macd_signal'])
@@ -404,51 +399,31 @@ bitget = PerpBitget(
     password=secret[account_to_select]["password"],
 )
 
-# Récupération des données
 df_list = {}
 
 for pair in params_coin:
     filename = f"{data_directory}/{pair.replace('/', '_').replace(':', '_')}_{timeframe}.csv"
 
-    # Vérifier si le fichier de données existe
     if os.path.isfile(filename):
-        # Charger les données existantes depuis le fichier
         df_existing = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
-
-        # Récupérer le dernier timestamp dans les données existantes
-        # last_timestamp = df_existing.index[-1]
-
-        # Calculer le nombre de nouvelles bougies à récupérer
-        # Supposons que le timeframe est en minutes, vous pouvez ajuster en fonction
-        # time_diff = datetime.utcnow() - last_timestamp
-        # minutes_diff = int(time_diff.total_seconds() / 60)
-        # limit = max(1, minutes_diff)
-
-        # Récupérer les nouvelles données manquantes
         new_data = bitget.get_more_last_historical_async(pair, timeframe, 10, MINUTEFRAME)
-
-        # Fusionner les nouvelles données avec les données existantes
         df_new = new_data.copy()
-        df_new = df_new[~df_new.index.isin(df_existing.index)]  # Éviter les doublons
+        df_new = df_new[~df_new.index.isin(df_existing.index)]
         df_pair = pd.concat([df_existing, df_new])
 
-        # Limiter le DataFrame aux 1000 dernières lignes
+
         df_pair = df_pair.tail(1000)
 
-        # Sauvegarder le DataFrame mis à jour dans le fichier
+
         df_pair.to_csv(filename, index=True)
 
-        # Ajouter le DataFrame au dictionnaire
         df_list[pair] = df_pair
     else:
-        # Le fichier n'existe pas, récupérer les données initiales (par exemple, 1000 bougies)
         initial_data = bitget.get_more_last_historical_async(pair, timeframe, 100, MINUTEFRAME)
         df_pair = initial_data.copy()
 
-        # Sauvegarder le DataFrame dans le fichier
         df_pair.to_csv(filename, index=True)
 
-        # Ajouter le DataFrame au dictionnaire
         df_list[pair] = df_pair
 
 print("Data OHLCV loaded 100%")
@@ -472,26 +447,24 @@ for pair in df_list:
     df["higher_band"] = bol_band.bollinger_hband()
     df["ma_band"] = bol_band.bollinger_mavg()
     df['long_ma'] = ta.trend.sma_indicator(close=df['close'], window=params["long_ma_window"])
+    df['long_ema_20'] = ta.trend.ema_indicator(close=df['close'], window=20)
     df["n1_close"] = df["close"].shift(1)
     df["n1_lower_band"] = df["lower_band"].shift(1)
     df["n1_higher_band"] = df["higher_band"].shift(1)
     df['iloc'] = range(len(df))
 
-    # Calcul de la MA 20 et de sa pente en pourcentage
     df['ma_20'] = ta.trend.sma_indicator(close=df['close'], window=20)
     df['ma_20_slope_pct'] = df['ma_20'].pct_change() * 100
 
-    # Calcul de la largeur des BB en pourcentage
     df['bb_width'] = df['higher_band'] - df['lower_band']
     df['bb_width_pct'] = (df['bb_width'] / df['ma_band']) * 100
 
-    # Calcul du RSI
     df['rsi'] = ta.momentum.rsi(close=df['close'], window=14)
 
-    # Calcul du MACD
     macd = ta.trend.MACD(close=df['close'])
     df['macd'] = macd.macd()
     df['macd_signal'] = macd.macd_signal()
+    df['ema_20'] = ta.trend.sma_indicator(close=df['close'], window=20)
 
 print("Indicators loaded 100%")
 
@@ -507,8 +480,8 @@ position_list = [
         "market_price": d["info"]["marketPrice"],
         "usd_size": float(d["contracts"]) * float(d["contractSize"]) * float(d["info"]["marketPrice"]),
         "open_price": d["entryPrice"],
-        "highest_price": float(d["entryPrice"]),  # Initialisation du highest_price
-        "open_time": df_list[d["symbol"]].iloc[-1].name  # En supposant que la position vient d'être ouverte
+        "highest_price": float(d["entryPrice"]),
+        "open_time": df_list[d["symbol"]].iloc[-1].name
     }
     for d in positions_data if d["symbol"] in df_list
 ]
@@ -527,7 +500,6 @@ for pos in position_list:
 
 print(f"{len(positions)} active positions ({list(positions.keys())})")
 
-# Vérification des positions à fermer
 positions_to_delete = []
 
 for pair in positions:
@@ -552,13 +524,11 @@ for pair in positions:
                 bitget.place_market_order(pair, "sell", close_long_quantity, reduce=True)
                 positions_to_delete.append(pair)
         else:
-            # Mise à jour du plus haut prix atteint
             positions[pair]['highest_price'] = position['highest_price']
 
 for pair in positions_to_delete:
     del positions[pair]
 
-# Vérification de l'exposition actuelle
 positions_exposition = {}
 long_exposition = 0
 short_exposition = 0
@@ -602,7 +572,6 @@ if len(positions) < MAX_POS:
                         bitget.place_market_order(pair, "buy", long_quantity, reduce=False)
                         positions_exposition[pair]["long"] += (long_quantity_in_usd / usd_balance)
                         long_exposition += (long_quantity_in_usd / usd_balance)
-                        # Initialiser le plus haut prix atteint et l'horodatage d'ouverture
                         positions[pair] = {
                             "side": "long",
                             "size": long_quantity,
@@ -610,9 +579,8 @@ if len(positions) < MAX_POS:
                             "usd_size": exchange_long_quantity,
                             "open_price": long_market_price,
                             "highest_price": long_market_price,
-                            "open_time": df.iloc[-1].name  # Horodatage d'ouverture
+                            "open_time": df.iloc[-1].name
                         }
-                # Ajoutez la gestion des positions courtes si nécessaire
             except Exception as e:
                 print(traceback.format_exc())
                 print(f"Error on {pair} ({e}), skip {pair}")
