@@ -23,10 +23,10 @@ account_to_select = "bitget_exemple"
 production = True
 
 pair = "BTC/USDT:USDT"
-timeframe = "1h"
+minuteframe = 60
 leverage = 1
 
-print(f"--- {pair} {timeframe} Leverage x {leverage} ---")
+print(f"--- {pair} {minuteframe} Leverage x {leverage} ---")
 
 type = ["long", "short"]
 bol_window = 100
@@ -75,7 +75,7 @@ bitget = PerpBitget(
 )
 
 # Get data
-df = bitget.get_more_last_historical_async(pair, timeframe, 1000)
+df = bitget.get_more_last_historical_async(pair, minuteframe + "m", 1000, minuteframe)
 
 # Populate indicator
 df.drop(columns=df.columns.difference(['open','high','low','close','volume']), inplace=True)

@@ -44,9 +44,9 @@ class PerpBitget():
         del result['timestamp']
         return result
 
-    def get_more_last_historical_async(self, symbol, timeframe, limit):
+    def get_more_last_historical_async(self, symbol, timeframe, limit, minuteFrame):
         max_threads = 4
-        pool_size = round(limit/100)  # your "parallelness"
+        # pool_size = round(limit/100)  # your "parallelness"
 
         # define worker function before a Pool is instantiated
         full_result = []
@@ -54,7 +54,7 @@ class PerpBitget():
 
             try:
                 return self._session.fetch_ohlcv(
-                symbol, timeframe, round(time.time() * 1000) - (i*1000*60*60), limit=100)
+                symbol, timeframe, round(time.time() * 1000) - (i*1000*60*minuteFrame), limit=100)
             except Exception as err:
                 raise Exception("Error on last historical on " + symbol + ": " + str(err))
 

@@ -1,11 +1,9 @@
 import sys
 
 sys.path.append("./live_tools")
-import ccxt
 import pandas as pd
 from utilities.spot_ftx import SpotFtx
 from datetime import datetime
-import time
 import json
 
 f = open(

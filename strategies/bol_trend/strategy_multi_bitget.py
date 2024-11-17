@@ -1,296 +1,396 @@
 import logging
+import os
 import sys
+import traceback
+
+MINUTEFRAME = 1
+MAX_POS = 10
 
 sys.path.append("./live_tools")
-import ccxt
 import ta
-import pandas as pd
 from utilities.perp_bitget import PerpBitget
-from utilities.custom_indicators import get_n_columns
-from utilities.var import ValueAtRisk
 from datetime import datetime
-import time
 import json
-import copy
+import pandas as pd
+
+data_directory = "./data"
+if not os.path.exists(data_directory):
+    os.makedirs(data_directory)
 
 now = datetime.now()
 current_time = now.strftime("%d/%m/%Y %H:%M:%S")
 print("--- Start Execution Time :", current_time, "---")
-
+#
+# f = open(
+#     "../../secret.json",
+# )
 f = open(
     "./live_tools/secret.json",
 )
+
+# Ajustez le chemin si nécessaire
 secret = json.load(f)
 f.close()
 
 account_to_select = "bitget_exemple"
 production = True
-timeframe = "1h"
-type = ["long", "short"]
-leverage = 1
-max_var = 1
-max_side_exposition = 1
+timeframe = "1m"
+type = ["long"]  # Spécifiez "short" si vous voulez également prendre des positions courtes
+leverage = 5
+max_var = 5
+max_side_exposition = 1.55
 
 margin_mode = "fixed"  # fixed or crossed
-exchange_leverage = 1
+exchange_leverage = 5
 
 params_coin = {
-    "BTC/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
-    },
+
     "AAVE/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,  # Tolérance pour la pente de la MA 20
+        "bb_width_tolerance": 5.0,  # Tolérance pour la largeur des BB en %
+        "rsi_threshold": 50,  # Seuil RSI pour l'entrée en position
+        "rsi_exit_threshold": 70,  # Seuil RSI pour la sortie de position
+        "macd_exit": True,  # Activation de la sortie basée sur le MACD
+        "trailing_stop_percentage": 2.0  # Pourcentage pour le trailing stop-loss
     },
-    "APE/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+    "LDO/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "APT/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "AVAX/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "AXS/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "C98/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "CRV/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "DOGE/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "DOT/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "DYDX/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "ETH/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "FIL/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "FTM/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "BNB/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "GALA/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "GMT/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "GRT/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "KNC/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "KSM/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
-    },
-    "LRC/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "MANA/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "MASK/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "MATIC/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "NEAR/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "ONE/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "OP/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
-    },
-    "SAND/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
-    },
-    "SHIB/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+    "KAS/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
     "SOL/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "STG/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+    "BGB/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "WAVES/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
+    "AVAX/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "WOO/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 1,
-        "long_ma_window": 500
+    "DOGE/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "EGLD/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
+
+    "FLOKI/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "ETC/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
+    "PYTH/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "JASMY/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
+    "PEPE/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
-    "ROSE/USDT:USDT": {
-        "wallet_exposure": 0.05,
-        "bb_window": 100,
-        "bb_std": 2.25,
-        "long_ma_window": 500
+    "SUI/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
     },
+    "NEAR/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "ICP/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "POL/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "XRP/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "APE/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "EOS/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "GALA/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "ETH/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "UXLINK/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "POPCAT/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "1000BONK/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    "1000000MOG/USDT:USDT": {
+        "wallet_exposure": 0.1,
+        "bb_window": 50,
+        "bb_std": 2,
+        "long_ma_window": 98,
+        "ma_slope_tolerance": 0.05,
+        "bb_width_tolerance": 5.0,
+        "rsi_threshold": 50,
+        "rsi_exit_threshold": 70,
+        "macd_exit": True,
+        "trailing_stop_percentage": 2.0
+    },
+    # Ajoutez d'autres actifs avec les mêmes paramètres
 }
 
 
-def open_long(row):
+def open_long(row, pair):
+    params = params_coin[pair]
+    ma_slope_tolerance = params["ma_slope_tolerance"]
+    bb_width_tolerance = params["bb_width_tolerance"]
+    rsi_threshold = params["rsi_threshold"]
+
+
+
     if (
-        row['n1_close'] < row['n1_higher_band']
-        and (row['close'] > row['higher_band'])
-        and (row['close'] > row['long_ma'])
+            row['n1_close'] < row['n1_higher_band']
+            and row['close'] > row['long_ma']
+            and row['close'] > row['higher_band']
+            and row['close'] > row['long_ma']
+            and abs(row['ma_20_slope_pct']) < ma_slope_tolerance
+            and row['bb_width_pct'] < bb_width_tolerance
+            and row['rsi'] > rsi_threshold
     ):
+        print(
+            f"Check open_long for {pair}: long_ma={row['long_ma']}, close={row['close']}, "
+            f"n1_close={row['n1_close']}, higher_band={row['higher_band']}, "
+            f"n1_higher_band={row['n1_higher_band']}, ma_band={row['ma_band']}, "
+            f"ma_20_slope_pct={row['ma_20_slope_pct']}, bb_width_pct={row['bb_width_pct']}, rsi={row['rsi']}"
+            f"long_ma={row['long_ma']}"
+        )
+        print(f"Open long on {pair}")
         return True
     else:
+        print(f"Skip long on {pair}")
         return False
 
 
-def close_long(row):
-    if (row['close'] < row['ma_band']):
-        return True
-    else:
-        return False
+def close_long(row, position, pair, df):
+    params = params_coin[pair]
+    rsi_exit_threshold = params.get('rsi_exit_threshold', 70)
+    macd_exit = params.get('macd_exit', True)
+    trailing_stop_percentage = params.get('trailing_stop_percentage', 2.0)
+
+    # Mise à jour du plus haut atteint pour le trailing stop-loss en se basant sur l'historique
+    open_time = position.get('open_time')
+    df_since_open = df[df.index >= open_time]
+    highest_price = df_since_open['high'].max()
+    position['highest_price'] = highest_price
+    trailing_stop_price = highest_price * (1 - trailing_stop_percentage / 100)
 
 
-def open_short(row):
-    if (
-        row['n1_close'] > row['n1_lower_band']
-        and (row['close'] < row['lower_band'])
-        and (row['close'] < row['long_ma'])
-    ):
-        return True
-    else:
-        return False
+    # Conditions de sortie
+    condition1 = row['close'] < row['ma_band']
+    condition2 = row['rsi'] > rsi_exit_threshold
+    condition3 = macd_exit and (row['macd'] < row['macd_signal'])
+    condition4 = row['close'] <= trailing_stop_price
 
+    if condition1 or condition2 or condition3 or condition4:
+        print(f"Close long on {pair}")
 
-def close_short(row):
-    if (row['close'] > row['ma_band']):
+        conditions_met = []
+        if condition1:
+            conditions_met.append("Close below MA Band")
+        if condition2:
+            conditions_met.append(f"RSI above {rsi_exit_threshold}")
+        if condition3:
+            conditions_met.append("MACD crossover down")
+        if condition4:
+            conditions_met.append("Trailing stop-loss hit")
+        print(f"Close long on {pair} due to: {', '.join(conditions_met)}")
+
         return True
     else:
         return False
@@ -304,17 +404,52 @@ bitget = PerpBitget(
     password=secret[account_to_select]["password"],
 )
 
-# Get data
+# Récupération des données
 df_list = {}
+
 for pair in params_coin:
-    temp_data = bitget.get_more_last_historical_async(pair, timeframe, 1000)
-    try:
-        if len(temp_data) == 990:
-            df_list[pair] = temp_data
-        else:
-            print(f"Pair {pair} not loaded, length: {len(temp_data)}")
-    except Exception as Argument:
-        logging.exception(f"Error while getting history of pair {pair}")
+    filename = f"{data_directory}/{pair.replace('/', '_').replace(':', '_')}_{timeframe}.csv"
+
+    # Vérifier si le fichier de données existe
+    if os.path.isfile(filename):
+        # Charger les données existantes depuis le fichier
+        df_existing = pd.read_csv(filename, index_col='timestamp', parse_dates=True)
+
+        # Récupérer le dernier timestamp dans les données existantes
+        # last_timestamp = df_existing.index[-1]
+
+        # Calculer le nombre de nouvelles bougies à récupérer
+        # Supposons que le timeframe est en minutes, vous pouvez ajuster en fonction
+        # time_diff = datetime.utcnow() - last_timestamp
+        # minutes_diff = int(time_diff.total_seconds() / 60)
+        # limit = max(1, minutes_diff)
+
+        # Récupérer les nouvelles données manquantes
+        new_data = bitget.get_more_last_historical_async(pair, timeframe, 10, MINUTEFRAME)
+
+        # Fusionner les nouvelles données avec les données existantes
+        df_new = new_data.copy()
+        df_new = df_new[~df_new.index.isin(df_existing.index)]  # Éviter les doublons
+        df_pair = pd.concat([df_existing, df_new])
+
+        # Limiter le DataFrame aux 1000 dernières lignes
+        df_pair = df_pair.tail(1000)
+
+        # Sauvegarder le DataFrame mis à jour dans le fichier
+        df_pair.to_csv(filename, index=True)
+
+        # Ajouter le DataFrame au dictionnaire
+        df_list[pair] = df_pair
+    else:
+        # Le fichier n'existe pas, récupérer les données initiales (par exemple, 1000 bougies)
+        initial_data = bitget.get_more_last_historical_async(pair, timeframe, 100, MINUTEFRAME)
+        df_pair = initial_data.copy()
+
+        # Sauvegarder le DataFrame dans le fichier
+        df_pair.to_csv(filename, index=True)
+
+        # Ajouter le DataFrame au dictionnaire
+        df_list[pair] = df_pair
 
 print("Data OHLCV loaded 100%")
 
@@ -328,6 +463,7 @@ def setExchangeLeverage(pair):
     except Exception as e:
         print(e)
 
+
 for pair in df_list:
     df = df_list[pair]
     params = params_coin[pair]
@@ -335,91 +471,94 @@ for pair in df_list:
     df["lower_band"] = bol_band.bollinger_lband()
     df["higher_band"] = bol_band.bollinger_hband()
     df["ma_band"] = bol_band.bollinger_mavg()
-
     df['long_ma'] = ta.trend.sma_indicator(close=df['close'], window=params["long_ma_window"])
-
     df["n1_close"] = df["close"].shift(1)
     df["n1_lower_band"] = df["lower_band"].shift(1)
     df["n1_higher_band"] = df["higher_band"].shift(1)
-
     df['iloc'] = range(len(df))
 
-print("Indicators loaded 100%")
+    # Calcul de la MA 20 et de sa pente en pourcentage
+    df['ma_20'] = ta.trend.sma_indicator(close=df['close'], window=20)
+    df['ma_20_slope_pct'] = df['ma_20'].pct_change() * 100
 
-var = ValueAtRisk(df_list=df_list.copy())
-var.update_cov(current_date=df_list["BTC/USDT:USDT"].index[-1], occurance_data=989)
-print("Value At Risk loaded 100%")
+    # Calcul de la largeur des BB en pourcentage
+    df['bb_width'] = df['higher_band'] - df['lower_band']
+    df['bb_width_pct'] = (df['bb_width'] / df['ma_band']) * 100
+
+    # Calcul du RSI
+    df['rsi'] = ta.momentum.rsi(close=df['close'], window=14)
+
+    # Calcul du MACD
+    macd = ta.trend.MACD(close=df['close'])
+    df['macd'] = macd.macd()
+    df['macd_signal'] = macd.macd_signal()
+
+print("Indicators loaded 100%")
 
 usd_balance = float(bitget.get_usdt_equity())
 print("USD balance :", round(usd_balance, 2), "$")
 
 positions_data = bitget.get_open_position()
 position_list = [
-    {"pair": d["symbol"], "side": d["side"], "size": float(d["contracts"]) * float(d["contractSize"]),
-     "market_price": d["info"]["marketPrice"],
-     "usd_size": float(d["contracts"]) * float(d["contractSize"]) * float(d["info"]["marketPrice"]),
-     "open_price": d["entryPrice"]}
-    for d in positions_data if d["symbol"] in df_list]
+    {
+        "pair": d["symbol"],
+        "side": d["side"],
+        "size": float(d["contracts"]) * float(d["contractSize"]),
+        "market_price": d["info"]["marketPrice"],
+        "usd_size": float(d["contracts"]) * float(d["contractSize"]) * float(d["info"]["marketPrice"]),
+        "open_price": d["entryPrice"],
+        "highest_price": float(d["entryPrice"]),  # Initialisation du highest_price
+        "open_time": df_list[d["symbol"]].iloc[-1].name  # En supposant que la position vient d'être ouverte
+    }
+    for d in positions_data if d["symbol"] in df_list
+]
 
 positions = {}
 for pos in position_list:
-    positions[pos["pair"]] = {"side": pos["side"], "size": pos["size"], "market_price": pos["market_price"],
-                              "usd_size": pos["usd_size"], "open_price": pos["open_price"]}
+    positions[pos["pair"]] = {
+        "side": pos["side"],
+        "size": pos["size"],
+        "market_price": pos["market_price"],
+        "usd_size": pos["usd_size"],
+        "open_price": pos["open_price"],
+        "highest_price": pos["highest_price"],
+        "open_time": pos["open_time"]
+    }
 
 print(f"{len(positions)} active positions ({list(positions.keys())})")
 
-# Check for closing positions...
+# Vérification des positions à fermer
 positions_to_delete = []
 
-
-
-
 for pair in positions:
-    row = df_list[pair].iloc[-2]
-    last_price = float(df_list[pair].iloc[-1]["close"])
+    df = df_list[pair]
+    row = df.iloc[-2]
+    last_price = float(df.iloc[-1]["close"])
     position = positions[pair]
 
-    if position["side"] == "long" and close_long(row):
-        close_long_market_price = last_price
-        close_long_quantity = float(
-            bitget.convert_amount_to_precision(pair, position["size"])
-        )
-        exchange_close_long_quantity = close_long_quantity * close_long_market_price
-        print(
-            f"Place Close Long Market Order: {close_long_quantity} {pair[:-5]} at the price of {close_long_market_price}$ ~{round(exchange_close_long_quantity, 2)}$"
-        )
-
-
-        if production:
-            setExchangeLeverage(pair)
-            bitget.place_market_order(pair, "sell", close_long_quantity, reduce=True)
-            positions_to_delete.append(pair)
-
-    elif position["side"] == "short" and close_short(row):
-        close_short_market_price = last_price
-        close_short_quantity = float(
-            bitget.convert_amount_to_precision(pair, position["size"])
-        )
-        exchange_close_short_quantity = close_short_quantity * close_short_market_price
-        print(
-            f"Place Close Short Market Order: {close_short_quantity} {pair[:-5]} at the price of {close_short_market_price}$ ~{round(exchange_close_short_quantity, 2)}$"
-        )
-        try:
-            print(f"Setting {margin_mode} x{exchange_leverage} on {pair} pair...")
-            bitget.set_margin_mode_and_leverage(
-                pair, margin_mode, exchange_leverage
+    if position["side"] == "long":
+        if close_long(row, position, pair, df):
+            close_long_market_price = last_price
+            close_long_quantity = float(
+                bitget.convert_amount_to_precision(pair, position["size"])
             )
-        except Exception as e:
-            print(e)
-        if production:
-            setExchangeLeverage(pair)
-            bitget.place_market_order(pair, "buy", close_short_quantity, reduce=True)
-            positions_to_delete.append(pair)
+            exchange_close_long_quantity = close_long_quantity * close_long_market_price
+            print(
+                f"Place Close Long Market Order: {close_long_quantity} {pair[:-5]} at the price of {close_long_market_price}$ ~{round(exchange_close_long_quantity, 2)}$"
+            )
+
+            if production:
+                setExchangeLeverage(pair)
+                bitget.place_market_order(pair, "sell", close_long_quantity, reduce=True)
+                positions_to_delete.append(pair)
+        else:
+            # Mise à jour du plus haut prix atteint
+            positions[pair]['highest_price'] = position['highest_price']
 
 for pair in positions_to_delete:
     del positions[pair]
 
-# Check current VaR risk
+# Vérification de l'exposition actuelle
 positions_exposition = {}
 long_exposition = 0
 short_exposition = 0
@@ -439,26 +578,18 @@ for pos in positions_data:
         positions_exposition[pos["symbol"]]["short"] += pct_exposition
         short_exposition += pct_exposition
 
-current_var = var.get_var(positions=positions_exposition)
-print(
-    f"Current VaR rsik 1 period: - {round(current_var, 2)}%, LONG exposition {round(long_exposition * 100, 2)}%, SHORT exposition {round(short_exposition * 100, 2)}%")
+pct_sizing = 1 / MAX_POS
 
-for pair in df_list:
-    if pair not in positions:
-        try:
-            row = df_list[pair].iloc[-2]
-            last_price = float(df_list[pair].iloc[-1]["close"])
-            pct_sizing = params_coin[pair]["wallet_exposure"]
-            if open_long(row) and "long" in type:
-                long_market_price = float(last_price)
-                long_quantity_in_usd = usd_balance * pct_sizing * leverage
-                temp_positions = copy.deepcopy(positions_exposition)
-                temp_positions[pair]["long"] += (long_quantity_in_usd / usd_balance)
-                temp_long_exposition = long_exposition + (long_quantity_in_usd / usd_balance)
-                temp_var = var.get_var(positions=temp_positions)
-                if temp_var > max_var or temp_long_exposition > max_side_exposition:
-                    print(f"Blocked open LONG on {pair}, because next VaR: - {round(current_var, 2)}%")
-                else:
+if len(positions) < MAX_POS:
+    for pair in df_list:
+        if pair not in positions:
+            try:
+                df = df_list[pair]
+                row = df.iloc[-2]
+                last_price = float(df.iloc[-1]["close"])
+                if open_long(row, pair) and "long" in type:
+                    long_market_price = last_price
+                    long_quantity_in_usd = usd_balance * pct_sizing * leverage
                     long_quantity = float(bitget.convert_amount_to_precision(pair, float(
                         bitget.convert_amount_to_precision(pair, long_quantity_in_usd / long_market_price)
                     )))
@@ -471,34 +602,23 @@ for pair in df_list:
                         bitget.place_market_order(pair, "buy", long_quantity, reduce=False)
                         positions_exposition[pair]["long"] += (long_quantity_in_usd / usd_balance)
                         long_exposition += (long_quantity_in_usd / usd_balance)
-
-            elif open_short(row) and "short" in type:
-                short_market_price = float(last_price)
-                short_quantity_in_usd = usd_balance * pct_sizing * leverage
-                temp_positions = copy.deepcopy(positions_exposition)
-                temp_positions[pair]["short"] += (short_quantity_in_usd / usd_balance)
-                temp_short_exposition = short_exposition + (short_quantity_in_usd / usd_balance)
-                temp_var = var.get_var(positions=temp_positions)
-                if temp_var > max_var or temp_short_exposition > max_side_exposition:
-                    print(f"Blocked open SHORT on {pair}, because next VaR: - {round(current_var, 2)}%")
-                else:
-                    short_quantity = float(bitget.convert_amount_to_precision(pair, float(
-                        bitget.convert_amount_to_precision(pair, short_quantity_in_usd / short_market_price)
-                    )))
-                    exchange_short_quantity = short_quantity * short_market_price
-                    print(
-                        f"Place Open Short Market Order: {short_quantity} {pair[:-5]} at the price of {short_market_price}$ ~{round(exchange_short_quantity, 2)}$"
-                    )
-                    if production:
-                        setExchangeLeverage(pair)
-                        bitget.place_market_order(pair, "sell", short_quantity, reduce=False)
-                        positions_exposition[pair]["short"] += (short_quantity_in_usd / usd_balance)
-                        short_exposition += (short_quantity_in_usd / usd_balance)
-
-        except Exception as e:
-            print(f"Error on {pair} ({e}), skip {pair}")
+                        # Initialiser le plus haut prix atteint et l'horodatage d'ouverture
+                        positions[pair] = {
+                            "side": "long",
+                            "size": long_quantity,
+                            "market_price": long_market_price,
+                            "usd_size": exchange_long_quantity,
+                            "open_price": long_market_price,
+                            "highest_price": long_market_price,
+                            "open_time": df.iloc[-1].name  # Horodatage d'ouverture
+                        }
+                # Ajoutez la gestion des positions courtes si nécessaire
+            except Exception as e:
+                print(traceback.format_exc())
+                print(f"Error on {pair} ({e}), skip {pair}")
+else:
+    print(f"{len(positions)} positions already opened")
 
 now = datetime.now()
 current_time = now.strftime("%d/%m/%Y %H:%M:%S")
 print("--- End Execution Time :", current_time, "---")
-
